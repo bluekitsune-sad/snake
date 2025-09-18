@@ -1,4 +1,8 @@
 import { aStarSearch } from "./pathFinder/aStar.js";
+import bfsSearch from "./pathFinder/bfs.js";
+import dfsSearch from "./pathFinder/dfs.js";
+import dijkstraSearch from "./pathFinder/djikstra.js";
+import floodFillSearch from "./pathFinder/floodfill.js";
 
 // board
 var blockSize = 25;
@@ -23,8 +27,8 @@ var velocityY = 0;
 // game over
 var gameOver = false;
 
-// Eating the food
-var isEating = false; // To check if the snake is in the process of eating the food
+// Eating control (no delay to avoid deaths)
+var isEating = false;
 
 window.onload = function () {
   board = document.getElementById("board");
@@ -37,6 +41,24 @@ window.onload = function () {
   setInterval(update, 1000 / 10); // 100 milliseconds = 0.1 seconds run the update function
 };
 
+// algorithm selection
+// 1: BFS, 2: DFS, 3: A*, 4: Dijkstra, 5: Flood Fill
+let currentAlgorithm = "astar";
+window.addEventListener("keydown", (e) => {
+  if (e.key === "1") currentAlgorithm = "bfs";
+  if (e.key === "2") currentAlgorithm = "dfs";
+  if (e.key === "3") currentAlgorithm = "astar";
+  if (e.key === "4") currentAlgorithm = "dijkstra";
+  if (e.key === "5") currentAlgorithm = "flood";
+});
+
+function drawCell(gridX, gridY, color, alpha = 1) {
+  context.globalAlpha = alpha;
+  context.fillStyle = color;
+  context.fillRect(gridX * blockSize, gridY * blockSize, blockSize, blockSize);
+  context.globalAlpha = 1;
+}
+
 function update() {
   if (gameOver) {
     return;
@@ -46,25 +68,12 @@ function update() {
   context.fillStyle = "black";
   context.fillRect(0, 0, board.width, board.height);
 
-  // food
-  context.fillStyle = "red";
-  context.fillRect(foodX, foodY, blockSize, blockSize);
-
-  // snake eating food
+  // snake eating food (no delay)
   if (snakeX == foodX && snakeY == foodY && !isEating) {
-    isEating = true; // Set the flag to indicate the snake is eating the food
-
-    // Add the food to the snake's body at the end (tail)
+    isEating = true;
     snakeBody.push([foodX, foodY]);
-
-    // Delay before continuing
-    setTimeout(() => {
-      placeFood(); // Place new food
-      isEating = false; // Reset the flag
-    }, 300);
-
-    // exit early to prevent pathfinding during the eating process
-    return;
+    placeFood();
+    isEating = false;
   }
 
   // move the snake's body
@@ -77,9 +86,64 @@ function update() {
     snakeBody[0] = [snakeX, snakeY];
   }
 
-  // Pathfinding: Calculate path to the food
-  if (!isEating) {
-    playingWithAStar();
+  // Pathfinding + visualization
+  const start = [snakeX / blockSize, snakeY / blockSize];
+  const goal = [foodX / blockSize, foodY / blockSize];
+  // Convert snake body to grid units and exclude the head cell
+  const snakeBodyGrid = snakeBody
+    .map((p) => [p[0] / blockSize, p[1] / blockSize])
+    .filter((p) => !(p[0] === start[0] && p[1] === start[1]));
+  let visitedCurrent = [];
+  let visitedNeighbors = [];
+  const onVisit = (node, type) => {
+    if (type === "current") visitedCurrent.push(node);
+    else visitedNeighbors.push(node);
+  };
+  let path = [];
+  if (currentAlgorithm === "bfs") {
+    path = bfsSearch(start, goal, cols, rows, snakeBodyGrid, onVisit);
+  } else if (currentAlgorithm === "dfs") {
+    path = dfsSearch(start, goal, cols, rows, snakeBodyGrid, onVisit);
+  } else if (currentAlgorithm === "dijkstra") {
+    path = dijkstraSearch(start, goal, cols, rows, snakeBodyGrid, onVisit);
+  } else if (currentAlgorithm === "flood") {
+    path = floodFillSearch(start, goal, cols, rows, snakeBodyGrid, onVisit);
+  } else {
+    path = aStarSearch(start, goal, cols, rows, snakeBodyGrid, onVisit);
+  }
+
+  // draw visited nodes
+  for (const n of visitedNeighbors) drawCell(n[0], n[1], "#2a6df5", 0.6);
+  for (const n of visitedCurrent) drawCell(n[0], n[1], "#87aafc", 0.8);
+
+  // draw path
+  if (path.length > 0) {
+    for (const step of path) drawCell(step[0], step[1], "#ffd54a", 0.6);
+  }
+
+  // food (on top)
+  context.fillStyle = "red";
+  context.fillRect(foodX, foodY, blockSize, blockSize);
+
+  // Update velocity from path
+  if (path && path.length > 1) {
+    let nextIndex = 1;
+    let nextStep = path[nextIndex];
+    const dx = nextStep[0] - start[0];
+    const dy = nextStep[1] - start[1];
+    // Prevent immediate 180-degree turns if snake has a body
+    const reversing =
+      snakeBody.length > 0 && dx === -velocityX && dy === -velocityY;
+    if (reversing && path.length > 2) {
+      nextIndex = 2;
+      nextStep = path[nextIndex];
+    }
+    const ndx = nextStep[0] - start[0];
+    const ndy = nextStep[1] - start[1];
+    if (!(snakeBody.length > 0 && ndx === -velocityX && ndy === -velocityY)) {
+      velocityX = ndx;
+      velocityY = ndy;
+    }
   }
 
   // snake movement
@@ -102,26 +166,7 @@ function update() {
   }
 }
 
-function playingWithAStar() {
-  console.log("Calculating path using A* algorithm...");
-  console.log("Snake Position:", snakeX, snakeY);
-  console.log("Food Position:", foodX, foodY);
-
-  // Pathfinding: Calculate path to the food
-  const start = [snakeX / blockSize, snakeY / blockSize];
-  const goal = [foodX / blockSize, foodY / blockSize];
-  const path = aStarSearch(start, goal, cols, rows, snakeBody);
-
-  if (path.length > 1) {
-    const nextStep = path[1]; // Take the next step in the path
-    const dx = nextStep[0] - start[0];
-    const dy = nextStep[1] - start[1];
-
-    // Update snake's velocity based on the path
-    velocityX = dx;
-    velocityY = dy;
-  }
-}
+// velocity update based on path is done right before movement
 
 function checkCollision() {
   // Check if the snake collides with itself (excluding the head)

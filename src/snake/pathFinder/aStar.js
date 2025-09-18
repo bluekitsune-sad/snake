@@ -1,5 +1,5 @@
 // A* helper functions
-export function aStarSearch(start, goal, cols, rows, snakeBody) {
+export function aStarSearch(start, goal, cols, rows, snakeBody, onVisit) {
   const openList = new Map(); // Changed to a Map for better performance
   const closedList = new Set(); // Set for faster lookup
   const gCost = new Map();
@@ -16,6 +16,10 @@ export function aStarSearch(start, goal, cols, rows, snakeBody) {
     let current = Array.from(openList.values()).reduce((lowest, node) =>
       fCost.get(node.toString()) < fCost.get(lowest.toString()) ? node : lowest
     );
+
+    if (onVisit) {
+      onVisit(current, "current");
+    }
 
     // If we reach the goal, reconstruct the path
     if (current[0] === goal[0] && current[1] === goal[1]) {
@@ -48,6 +52,9 @@ export function aStarSearch(start, goal, cols, rows, snakeBody) {
 
         if (!openList.has(neighbor.toString())) {
           openList.set(neighbor.toString(), neighbor);
+          if (onVisit) {
+            onVisit(neighbor, "neighbor");
+          }
         }
       }
     }
